@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gmail Ad Sender</title>
+  <style>
+    body {
+      width: 400px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+    }
+    textarea {
+      width: 100%;
+      height: 200px;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px;
+      width: 100%;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <h2>Insert Ad List</h2>
+  <textarea id="adList" placeholder="Paste your ad list here..."></textarea>
+  <p id="emailCounter">Emails sent: 0 / 0</p>
+  <button id="sendEmails">Send Emails</button>
+  <script src="popup.js"></script>
+</body>
+</html>
