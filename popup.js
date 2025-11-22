@@ -1,5 +1,6 @@
 const adListElement = document.getElementById('adList');
 const counterElement = document.getElementById('emailCounter');
+const pasteListElement = document.getElementById('pasteList');
 const sendButton = document.getElementById('sendEmails');
 
 function parseAds(rawInput) {
@@ -41,18 +42,33 @@ function parseAds(rawInput) {
     .filter(Boolean);
 }
 
+function parsePastes(rawInput) {
+  return rawInput
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
 sendButton.addEventListener('click', () => {
-  const input = adListElement.value.trim();
+  const adInput = adListElement.value.trim();
+  const pasteInput = pasteListElement.value.trim();
 
-  console.log('Step 1: Input received:', input);
+  console.log('Step 1: Inputs received:', { adInput, pasteInput });
 
-  if (!input) {
+  if (!adInput) {
     console.error('Step 1 Failed: Input is empty.');
     alert('Please paste your ad list.');
     return;
   }
 
-  const ads = parseAds(input);
+  if (!pasteInput) {
+    console.error('Step 1 Failed: Paste list is empty.');
+    alert('Please paste your message list.');
+    return;
+  }
+
+  const ads = parseAds(adInput);
+  const pastes = parsePastes(pasteInput);
 
   if (ads.length === 0) {
     console.error('Step 2 Failed: No valid ads found.');
@@ -60,80 +76,71 @@ sendButton.addEventListener('click', () => {
     return;
   }
 
-  console.log('Step 2: Data parsed successfully:', ads);
+  if (pastes.length < ads.length) {
+    console.error('Step 2 Failed: Not enough pastes for all emails.', { pastes: pastes.length, ads: ads.length });
+    alert('Not enough pastes for all emails. Please add more messages.');
+    return;
+  }
 
-  fetch(chrome.runtime.getURL('messages.json'))
-    .then(response => response.json())
-    .then(messages => {
-      console.log('Step 3: Messages loaded:', messages);
-      if (!messages || !messages.length) {
-        console.error('Step 3 Failed: No messages found.');
-        alert('Failed to load message templates.');
-        return;
-      }
+  console.log('Step 2: Data parsed successfully:', { ads, pastes });
 
-      let index = 0;
-      counterElement.textContent = `Emails sent: 0 / ${ads.length}`;
+  let index = 0;
+  counterElement.textContent = `Emails sent: 0 / ${ads.length}`;
 
-      function sendNextEmail() {
-        if (index >= ads.length) {
-          console.log('Step 15: All emails sent.');
-          alert('All emails sent successfully.');
-          return;
-        }
+  function sendNextEmail() {
+    if (index >= ads.length) {
+      console.log('Step 15: All emails sent.');
+      alert('All emails sent successfully.');
+      return;
+    }
 
-        const { title, email } = ads[index];
-        const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+    const { title, email } = ads[index];
+    const message = pastes[index];
 
-        console.log('Step 4: Processing item:', { index, title, email });
-        console.log('Step 4.1: Message to be sent:', randomMessage);
+    console.log('Step 4: Processing item:', { index, title, email });
+    console.log('Step 4.1: Message to be sent:', message);
 
-        chrome.tabs.query({ url: 'https://mail.google.com/*' }, (tabs) => {
-          if (tabs.length > 0) {
-            chrome.tabs.update(tabs[0].id, { active: true }, (tab) => {
-              console.log('Step 5: Executing script on existing tab:', tab.id);
-              executeEmailScript(tab.id, title, email, randomMessage);
-            });
-          } else {
-            chrome.tabs.create({ url: 'https://mail.google.com/mail/u/0/#inbox' }, (tab) => {
-              chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-                if (tabId === tab.id && changeInfo.status === 'complete') {
-                  chrome.tabs.onUpdated.removeListener(listener);
-                  console.log('Step 5: Executing script on new tab:', tabId);
-                  setTimeout(() => executeEmailScript(tabId, title, email, randomMessage), 2000);
-                }
-              });
-            });
-          }
+    chrome.tabs.query({ url: 'https://mail.google.com/*' }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.update(tabs[0].id, { active: true }, (tab) => {
+          console.log('Step 5: Executing script on existing tab:', tab.id);
+          executeEmailScript(tab.id, title, email, message);
         });
-
-        function executeEmailScript(tabId, title, email, message) {
-          chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            func: automateEmail,
-            args: [title, email, message]
-          }, (results) => {
-            if (chrome.runtime.lastError) {
-              console.error('Step 5.1: Script execution failed:', chrome.runtime.lastError.message);
-              alert('Failed to send email. Please refresh Gmail and try again.');
-            } else {
-              console.log('Step 5.1: Script executed successfully:', results);
-              index++;
-              counterElement.textContent = `Emails sent: ${index} / ${ads.length}`;
-              const delay = 5000 + Math.random() * 5000;
-              console.log(`Step 6: Waiting ${delay / 1000} seconds before next email...`);
-              setTimeout(sendNextEmail, delay);
+      } else {
+        chrome.tabs.create({ url: 'https://mail.google.com/mail/u/0/#inbox' }, (tab) => {
+          chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+            if (tabId === tab.id && changeInfo.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              console.log('Step 5: Executing script on new tab:', tabId);
+              setTimeout(() => executeEmailScript(tabId, title, email, message), 2000);
             }
           });
-        }
+        });
       }
-
-      sendNextEmail();
-    })
-    .catch(error => {
-      console.error('Step 3 Failed: Error loading messages.json:', error);
-      alert('Error loading message templates.');
     });
+
+    function executeEmailScript(tabId, title, email, message) {
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: automateEmail,
+        args: [title, email, message]
+      }, (results) => {
+        if (chrome.runtime.lastError) {
+          console.error('Step 5.1: Script execution failed:', chrome.runtime.lastError.message);
+          alert('Failed to send email. Please refresh Gmail and try again.');
+        } else {
+          console.log('Step 5.1: Script executed successfully:', results);
+          index++;
+          counterElement.textContent = `Emails sent: ${index} / ${ads.length}`;
+          const delay = 5000 + Math.random() * 5000;
+          console.log(`Step 6: Waiting ${delay / 1000} seconds before next email...`);
+          setTimeout(sendNextEmail, delay);
+        }
+      });
+    }
+  }
+
+  sendNextEmail();
 });
 
 function automateEmail(title, email, message) {
