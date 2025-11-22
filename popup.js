@@ -1,5 +1,48 @@
-document.getElementById('sendEmails').addEventListener('click', () => {
-  const input = document.getElementById('adList').value.trim();
+const adListElement = document.getElementById('adList');
+const counterElement = document.getElementById('emailCounter');
+const sendButton = document.getElementById('sendEmails');
+
+function parseAds(rawInput) {
+  const lines = rawInput
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  return lines
+    .map((line, idx) => {
+      // Новый формат: email | title | adlink (используем только первые два поля)
+      const parts = line.split('|').map(part => part.trim()).filter(Boolean);
+
+      if (parts.length >= 2) {
+        const [email, title] = parts;
+        if (email && title) {
+          console.log(`Line ${idx + 1} parsed (pipe format):`, { email, title });
+          return { email, title };
+        }
+      }
+
+      // Fallback на старые блоки с эмодзи или символами таблицы
+      const blockLines = line.split('\n').filter(Boolean);
+      const emailLine = blockLines.find(entry => entry.includes('📧 Email:') || entry.includes('├ Почта:') || entry.includes('├ Email:'));
+      const titleLine = blockLines.find(entry => entry.includes('🔍 Title:') || entry.includes('├ Товар:') || entry.includes('├ Product:'));
+
+      if (emailLine && titleLine) {
+        const emailValue = emailLine.split(':')[1]?.trim();
+        const titleValue = titleLine.split(':')[1]?.trim();
+        if (emailValue && titleValue) {
+          console.log(`Line ${idx + 1} parsed (fallback format):`, { email: emailValue, title: titleValue });
+          return { email: emailValue, title: titleValue };
+        }
+      }
+
+      console.warn(`Line ${idx + 1} ignored. Invalid format:`, line);
+      return null;
+    })
+    .filter(Boolean);
+}
+
+sendButton.addEventListener('click', () => {
+  const input = adListElement.value.trim();
 
   console.log('Step 1: Input received:', input);
 
@@ -9,41 +52,7 @@ document.getElementById('sendEmails').addEventListener('click', () => {
     return;
   }
 
-  // Parse the ad list - Поддержка нового формата
-  const ads = [];
-  const adBlocks = input.split('\n\n').filter(block => block.trim() !== '');
-
-  adBlocks.forEach((block, idx) => {
-    const lines = block.split('\n').filter(line => line.trim() !== '');
-    let email = null;
-    let title = null;
-
-    // Новый формат с эмодзи
-    const emailLine = lines.find(line => line.includes('📧 Email:'));
-    const titleLine = lines.find(line => line.includes('🔍 Title:'));
-
-    if (emailLine && titleLine) {
-      email = emailLine.split('📧 Email:')[1].trim();
-      title = titleLine.split('🔍 Title:')[1].trim();
-    } 
-    // Старый формат (fallback)
-    else {
-      const oldEmailLine = lines.find(line => line.includes('├ Почта:') || line.includes('├ Email:'));
-      const oldTitleLine = lines.find(line => line.includes('├ Товар:') || line.includes('├ Product:'));
-      
-      if (oldEmailLine && oldTitleLine) {
-        email = oldEmailLine.split(':')[1].trim();
-        title = oldTitleLine.split(':')[1].trim();
-      }
-    }
-
-    if (email && title) {
-      ads.push({ title, email });
-      console.log(`Block ${idx + 1} parsed:`, { title, email });
-    } else {
-      console.warn(`Block ${idx + 1} ignored. Invalid format:`, block);
-    }
-  });
+  const ads = parseAds(input);
 
   if (ads.length === 0) {
     console.error('Step 2 Failed: No valid ads found.');
@@ -64,7 +73,6 @@ document.getElementById('sendEmails').addEventListener('click', () => {
       }
 
       let index = 0;
-      const counterElement = document.getElementById('emailCounter');
       counterElement.textContent = `Emails sent: 0 / ${ads.length}`;
 
       function sendNextEmail() {
@@ -160,8 +168,9 @@ function automateEmail(title, email, message) {
 
     const toField = formContainer.querySelector('input[role="combobox"]');
     const subjectField = formContainer.querySelector('input[name="subjectbox"]');
-    const bodyField = document.querySelector('div[role="textbox"][aria-label="Message Body"][contenteditable="true"]') ||
-                     document.querySelector('div[contenteditable="true"]');
+    const bodyField =
+      document.querySelector('div[role="textbox"][aria-label="Message Body"][contenteditable="true"]') ||
+      document.querySelector('div[contenteditable="true"]');
     const sendButton = document.querySelector('div.T-I.J-J5-Ji.aoO.v7[role="button"][aria-label="Send"]') ||
                       document.querySelector('div.T-I.J-J5-Ji.aoO.v7[role="button"][data-tooltip*="Send"]');
 
