@@ -1,49 +1,74 @@
-document.getElementById('sendEmails').addEventListener('click', () => {
-  const input = document.getElementById('adList').value.trim();
+const adListElement = document.getElementById('adList');
+const counterElement = document.getElementById('emailCounter');
+const pasteListElement = document.getElementById('pasteList');
+const sendButton = document.getElementById('sendEmails');
 
-  console.log('Step 1: Input received:', input);
+function parseAds(rawInput) {
+  const lines = rawInput
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
 
-  if (!input) {
+  return lines
+    .map((line, idx) => {
+      // Новый формат: email | title | adlink (используем только первые два поля)
+      const parts = line.split('|').map(part => part.trim()).filter(Boolean);
+
+      if (parts.length >= 2) {
+        const [email, title] = parts;
+        if (email && title) {
+          console.log(`Line ${idx + 1} parsed (pipe format):`, { email, title });
+          return { email, title };
+        }
+      }
+
+      // Fallback на старые блоки с эмодзи или символами таблицы
+      const blockLines = line.split('\n').filter(Boolean);
+      const emailLine = blockLines.find(entry => entry.includes('📧 Email:') || entry.includes('├ Почта:') || entry.includes('├ Email:'));
+      const titleLine = blockLines.find(entry => entry.includes('🔍 Title:') || entry.includes('├ Товар:') || entry.includes('├ Product:'));
+
+      if (emailLine && titleLine) {
+        const emailValue = emailLine.split(':')[1]?.trim();
+        const titleValue = titleLine.split(':')[1]?.trim();
+        if (emailValue && titleValue) {
+          console.log(`Line ${idx + 1} parsed (fallback format):`, { email: emailValue, title: titleValue });
+          return { email: emailValue, title: titleValue };
+        }
+      }
+
+      console.warn(`Line ${idx + 1} ignored. Invalid format:`, line);
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function parsePastes(rawInput) {
+  return rawInput
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+sendButton.addEventListener('click', () => {
+  const adInput = adListElement.value.trim();
+  const pasteInput = pasteListElement.value.trim();
+
+  console.log('Step 1: Inputs received:', { adInput, pasteInput });
+
+  if (!adInput) {
     console.error('Step 1 Failed: Input is empty.');
     alert('Please paste your ad list.');
     return;
   }
 
-  // Parse the ad list - Поддержка нового формата
-  const ads = [];
-  const adBlocks = input.split('\n\n').filter(block => block.trim() !== '');
+  if (!pasteInput) {
+    console.error('Step 1 Failed: Paste list is empty.');
+    alert('Please paste your message list.');
+    return;
+  }
 
-  adBlocks.forEach((block, idx) => {
-    const lines = block.split('\n').filter(line => line.trim() !== '');
-    let email = null;
-    let title = null;
-
-    // Новый формат с эмодзи
-    const emailLine = lines.find(line => line.includes('📧 Email:'));
-    const titleLine = lines.find(line => line.includes('🔍 Title:'));
-
-    if (emailLine && titleLine) {
-      email = emailLine.split('📧 Email:')[1].trim();
-      title = titleLine.split('🔍 Title:')[1].trim();
-    } 
-    // Старый формат (fallback)
-    else {
-      const oldEmailLine = lines.find(line => line.includes('├ Почта:') || line.includes('├ Email:'));
-      const oldTitleLine = lines.find(line => line.includes('├ Товар:') || line.includes('├ Product:'));
-      
-      if (oldEmailLine && oldTitleLine) {
-        email = oldEmailLine.split(':')[1].trim();
-        title = oldTitleLine.split(':')[1].trim();
-      }
-    }
-
-    if (email && title) {
-      ads.push({ title, email });
-      console.log(`Block ${idx + 1} parsed:`, { title, email });
-    } else {
-      console.warn(`Block ${idx + 1} ignored. Invalid format:`, block);
-    }
-  });
+  const ads = parseAds(adInput);
+  const pastes = parsePastes(pasteInput);
 
   if (ads.length === 0) {
     console.error('Step 2 Failed: No valid ads found.');
@@ -51,81 +76,71 @@ document.getElementById('sendEmails').addEventListener('click', () => {
     return;
   }
 
-  console.log('Step 2: Data parsed successfully:', ads);
+  if (pastes.length < ads.length) {
+    console.error('Step 2 Failed: Not enough pastes for all emails.', { pastes: pastes.length, ads: ads.length });
+    alert('Not enough pastes for all emails. Please add more messages.');
+    return;
+  }
 
-  fetch(chrome.runtime.getURL('messages.json'))
-    .then(response => response.json())
-    .then(messages => {
-      console.log('Step 3: Messages loaded:', messages);
-      if (!messages || !messages.length) {
-        console.error('Step 3 Failed: No messages found.');
-        alert('Failed to load message templates.');
-        return;
-      }
+  console.log('Step 2: Data parsed successfully:', { ads, pastes });
 
-      let index = 0;
-      const counterElement = document.getElementById('emailCounter');
-      counterElement.textContent = `Emails sent: 0 / ${ads.length}`;
+  let index = 0;
+  counterElement.textContent = `Emails sent: 0 / ${ads.length}`;
 
-      function sendNextEmail() {
-        if (index >= ads.length) {
-          console.log('Step 15: All emails sent.');
-          alert('All emails sent successfully.');
-          return;
-        }
+  function sendNextEmail() {
+    if (index >= ads.length) {
+      console.log('Step 15: All emails sent.');
+      alert('All emails sent successfully.');
+      return;
+    }
 
-        const { title, email } = ads[index];
-        const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+    const { title, email } = ads[index];
+    const message = pastes[index];
 
-        console.log('Step 4: Processing item:', { index, title, email });
-        console.log('Step 4.1: Message to be sent:', randomMessage);
+    console.log('Step 4: Processing item:', { index, title, email });
+    console.log('Step 4.1: Message to be sent:', message);
 
-        chrome.tabs.query({ url: 'https://mail.google.com/*' }, (tabs) => {
-          if (tabs.length > 0) {
-            chrome.tabs.update(tabs[0].id, { active: true }, (tab) => {
-              console.log('Step 5: Executing script on existing tab:', tab.id);
-              executeEmailScript(tab.id, title, email, randomMessage);
-            });
-          } else {
-            chrome.tabs.create({ url: 'https://mail.google.com/mail/u/0/#inbox' }, (tab) => {
-              chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-                if (tabId === tab.id && changeInfo.status === 'complete') {
-                  chrome.tabs.onUpdated.removeListener(listener);
-                  console.log('Step 5: Executing script on new tab:', tabId);
-                  setTimeout(() => executeEmailScript(tabId, title, email, randomMessage), 2000);
-                }
-              });
-            });
-          }
+    chrome.tabs.query({ url: 'https://mail.google.com/*' }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.update(tabs[0].id, { active: true }, (tab) => {
+          console.log('Step 5: Executing script on existing tab:', tab.id);
+          executeEmailScript(tab.id, title, email, message);
         });
-
-        function executeEmailScript(tabId, title, email, message) {
-          chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            func: automateEmail,
-            args: [title, email, message]
-          }, (results) => {
-            if (chrome.runtime.lastError) {
-              console.error('Step 5.1: Script execution failed:', chrome.runtime.lastError.message);
-              alert('Failed to send email. Please refresh Gmail and try again.');
-            } else {
-              console.log('Step 5.1: Script executed successfully:', results);
-              index++;
-              counterElement.textContent = `Emails sent: ${index} / ${ads.length}`;
-              const delay = 5000 + Math.random() * 5000;
-              console.log(`Step 6: Waiting ${delay / 1000} seconds before next email...`);
-              setTimeout(sendNextEmail, delay);
+      } else {
+        chrome.tabs.create({ url: 'https://mail.google.com/mail/u/0/#inbox' }, (tab) => {
+          chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+            if (tabId === tab.id && changeInfo.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              console.log('Step 5: Executing script on new tab:', tabId);
+              setTimeout(() => executeEmailScript(tabId, title, email, message), 2000);
             }
           });
-        }
+        });
       }
-
-      sendNextEmail();
-    })
-    .catch(error => {
-      console.error('Step 3 Failed: Error loading messages.json:', error);
-      alert('Error loading message templates.');
     });
+
+    function executeEmailScript(tabId, title, email, message) {
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: automateEmail,
+        args: [title, email, message]
+      }, (results) => {
+        if (chrome.runtime.lastError) {
+          console.error('Step 5.1: Script execution failed:', chrome.runtime.lastError.message);
+          alert('Failed to send email. Please refresh Gmail and try again.');
+        } else {
+          console.log('Step 5.1: Script executed successfully:', results);
+          index++;
+          counterElement.textContent = `Emails sent: ${index} / ${ads.length}`;
+          const delay = 5000 + Math.random() * 5000;
+          console.log(`Step 6: Waiting ${delay / 1000} seconds before next email...`);
+          setTimeout(sendNextEmail, delay);
+        }
+      });
+    }
+  }
+
+  sendNextEmail();
 });
 
 function automateEmail(title, email, message) {
@@ -160,8 +175,9 @@ function automateEmail(title, email, message) {
 
     const toField = formContainer.querySelector('input[role="combobox"]');
     const subjectField = formContainer.querySelector('input[name="subjectbox"]');
-    const bodyField = document.querySelector('div[role="textbox"][aria-label="Message Body"][contenteditable="true"]') ||
-                     document.querySelector('div[contenteditable="true"]');
+    const bodyField =
+      document.querySelector('div[role="textbox"][aria-label="Message Body"][contenteditable="true"]') ||
+      document.querySelector('div[contenteditable="true"]');
     const sendButton = document.querySelector('div.T-I.J-J5-Ji.aoO.v7[role="button"][aria-label="Send"]') ||
                       document.querySelector('div.T-I.J-J5-Ji.aoO.v7[role="button"][data-tooltip*="Send"]');
 
